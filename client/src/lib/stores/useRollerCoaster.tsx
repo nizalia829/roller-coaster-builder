@@ -20,6 +20,7 @@ interface RollerCoasterState {
   isLooped: boolean;
   hasChainLift: boolean;
   showWoodSupports: boolean;
+  isNightMode: boolean;
   
   setMode: (mode: CoasterMode) => void;
   addTrackPoint: (position: THREE.Vector3) => void;
@@ -35,6 +36,7 @@ interface RollerCoasterState {
   setIsLooped: (looped: boolean) => void;
   setHasChainLift: (hasChain: boolean) => void;
   setShowWoodSupports: (show: boolean) => void;
+  setIsNightMode: (night: boolean) => void;
   startRide: () => void;
   stopRide: () => void;
 }
@@ -53,6 +55,7 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
   isLooped: false,
   hasChainLift: true,
   showWoodSupports: false,
+  isNightMode: false,
   
   setMode: (mode) => set({ mode }),
   
@@ -65,6 +68,8 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
   setHasChainLift: (hasChain) => set({ hasChainLift: hasChain }),
   
   setShowWoodSupports: (show) => set({ showWoodSupports: show }),
+  
+  setIsNightMode: (night) => set({ isNightMode: night }),
   
   addTrackPoint: (position) => {
     const id = `point-${++pointCounter}`;

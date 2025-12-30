@@ -4,11 +4,11 @@ import { useRollerCoaster } from "@/lib/stores/useRollerCoaster";
 import { Line } from "@react-three/drei";
 
 export function Track() {
-  const { trackPoints, isLooped, showWoodSupports } = useRollerCoaster();
+  const { trackPoints, isLooped, showWoodSupports, isNightMode } = useRollerCoaster();
   
-  const { curve, railPoints, woodSupports } = useMemo(() => {
+  const { curve, railPoints, woodSupports, trackLights } = useMemo(() => {
     if (trackPoints.length < 2) {
-      return { curve: null, railPoints: [], woodSupports: [] };
+      return { curve: null, railPoints: [], woodSupports: [], trackLights: [] };
     }
     
     const points = trackPoints.map((p) => p.position.clone());
@@ -38,7 +38,18 @@ export function Track() {
       }
     }
     
-    return { curve, railPoints, woodSupports };
+    const trackLights: { pos: THREE.Vector3; normal: THREE.Vector3 }[] = [];
+    const lightInterval = 6;
+    
+    for (let i = 0; i < railPoints.length; i += lightInterval) {
+      const point = railPoints[i];
+      const t = i / (railPoints.length - 1);
+      const tangent = curve.getTangent(Math.min(t, 1));
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+      trackLights.push({ pos: point.clone(), normal: normal.clone() });
+    }
+    
+    return { curve, railPoints, woodSupports, trackLights };
   }, [trackPoints, isLooped]);
   
   if (!curve || railPoints.length < 2) {
@@ -155,6 +166,42 @@ export function Track() {
                 <meshStandardMaterial color="#CD853F" />
               </mesh>
             )}
+          </group>
+        );
+      })}
+      
+      {isNightMode && trackLights.map((light, i) => {
+        const { pos, normal } = light;
+        const leftX = pos.x + normal.x * 0.5;
+        const leftZ = pos.z + normal.z * 0.5;
+        const rightX = pos.x - normal.x * 0.5;
+        const rightZ = pos.z - normal.z * 0.5;
+        const colors = ["#FF0000", "#FFFF00", "#00FF00", "#00FFFF", "#FF00FF"];
+        const color = colors[i % colors.length];
+        
+        return (
+          <group key={`light-${i}`}>
+            <mesh position={[leftX, pos.y + 0.1, leftZ]}>
+              <sphereGeometry args={[0.15, 8, 8]} />
+              <meshBasicMaterial color={color} />
+            </mesh>
+            <pointLight 
+              position={[leftX, pos.y + 0.1, leftZ]} 
+              intensity={0.3} 
+              color={color} 
+              distance={8} 
+            />
+            
+            <mesh position={[rightX, pos.y + 0.1, rightZ]}>
+              <sphereGeometry args={[0.15, 8, 8]} />
+              <meshBasicMaterial color={color} />
+            </mesh>
+            <pointLight 
+              position={[rightX, pos.y + 0.1, rightZ]} 
+              intensity={0.3} 
+              color={color} 
+              distance={8} 
+            />
           </group>
         );
       })}

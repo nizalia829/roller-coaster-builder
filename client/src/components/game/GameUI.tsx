@@ -22,6 +22,8 @@ export function GameUI() {
     setHasChainLift,
     showWoodSupports,
     setShowWoodSupports,
+    isNightMode,
+    setIsNightMode,
   } = useRollerCoaster();
   
   const [position, setPosition] = useState({ x: 8, y: 8 });
@@ -112,6 +114,16 @@ export function GameUI() {
                   : "bg-gray-600 hover:bg-gray-700"}`}
               >
                 {showWoodSupports ? "Wood ON" : "Wood OFF"}
+              </Button>
+              
+              <Button
+                size="sm"
+                onClick={() => setIsNightMode(!isNightMode)}
+                className={`h-6 text-[10px] px-2 ${isNightMode 
+                  ? "bg-indigo-700 hover:bg-indigo-800" 
+                  : "bg-gray-600 hover:bg-gray-700"}`}
+              >
+                {isNightMode ? "Night ON" : "Night OFF"}
               </Button>
               
               <Button
