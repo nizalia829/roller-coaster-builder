@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect } from "react";
-import { ThreeEvent, useThree } from "@react-three/fiber";
+import { useRef, useEffect, useState } from "react";
+import { ThreeEvent } from "@react-three/fiber";
+import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useRollerCoaster } from "@/lib/stores/useRollerCoaster";
 
@@ -11,54 +12,55 @@ interface TrackPointProps {
 
 export function TrackPoint({ id, position, index }: TrackPointProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const transformRef = useRef<any>(null);
+  const [meshReady, setMeshReady] = useState(false);
   const { selectedPointId, selectPoint, updateTrackPoint, mode, setIsDraggingPoint } = useRollerCoaster();
-  const [isDragging, setIsDragging] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const { gl } = useThree();
-  
-  const currentYRef = useRef(position.y);
-  const positionRef = useRef({ x: position.x, z: position.z });
-  
-  useEffect(() => {
-    currentYRef.current = position.y;
-    positionRef.current = { x: position.x, z: position.z };
-  }, [position.x, position.y, position.z]);
   
   const isSelected = selectedPointId === id;
   
   useEffect(() => {
-    if (!isDragging) return;
+    if (meshRef.current) {
+      setMeshReady(true);
+    }
+  }, []);
+  
+  useEffect(() => {
+    if (!transformRef.current) return;
     
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!isDragging || mode !== "build") return;
+    const controls = transformRef.current;
+    
+    const handleDraggingChanged = (event: any) => {
+      setIsDraggingPoint(event.value);
       
-      const deltaY = e.movementY * -0.1;
-      const newY = Math.max(0.5, currentYRef.current + deltaY);
-      currentYRef.current = newY;
-      
-      const newPos = new THREE.Vector3(positionRef.current.x, newY, positionRef.current.z);
-      updateTrackPoint(id, newPos);
+      if (!event.value && meshRef.current) {
+        const worldPos = new THREE.Vector3();
+        meshRef.current.getWorldPosition(worldPos);
+        const clampedY = Math.max(0.5, worldPos.y);
+        updateTrackPoint(id, new THREE.Vector3(worldPos.x, clampedY, worldPos.z));
+      }
     };
     
-    const handlePointerUp = () => {
-      setIsDragging(false);
-      setIsDraggingPoint(false);
+    const handleObjectChange = () => {
+      if (meshRef.current) {
+        const worldPos = new THREE.Vector3();
+        meshRef.current.getWorldPosition(worldPos);
+        const clampedY = Math.max(0.5, worldPos.y);
+        updateTrackPoint(id, new THREE.Vector3(worldPos.x, clampedY, worldPos.z));
+      }
     };
     
-    gl.domElement.addEventListener("pointermove", handlePointerMove);
-    gl.domElement.addEventListener("pointerup", handlePointerUp);
+    controls.addEventListener("dragging-changed", handleDraggingChanged);
+    controls.addEventListener("objectChange", handleObjectChange);
     
     return () => {
-      gl.domElement.removeEventListener("pointermove", handlePointerMove);
-      gl.domElement.removeEventListener("pointerup", handlePointerUp);
+      controls.removeEventListener("dragging-changed", handleDraggingChanged);
+      controls.removeEventListener("objectChange", handleObjectChange);
     };
-  }, [isDragging, id, updateTrackPoint, mode, gl.domElement, setIsDraggingPoint]);
+  }, [id, updateTrackPoint, setIsDraggingPoint]);
   
-  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
     if (mode !== "build") return;
     e.stopPropagation();
-    setIsDragging(true);
-    setIsDraggingPoint(true);
     selectPoint(id);
   };
   
@@ -69,17 +71,27 @@ export function TrackPoint({ id, position, index }: TrackPointProps) {
       <mesh
         ref={meshRef}
         position={[position.x, position.y, position.z]}
-        onPointerDown={handlePointerDown}
-        onPointerOver={() => setHovered(true)}
-        onPointerOut={() => setHovered(false)}
+        onClick={handleClick}
       >
         <sphereGeometry args={[0.5, 16, 16]} />
         <meshStandardMaterial
-          color={isSelected ? "#ff6600" : hovered ? "#ffaa00" : "#4488ff"}
-          emissive={isSelected ? "#ff3300" : hovered ? "#ff6600" : "#000000"}
+          color={isSelected ? "#ff6600" : "#4488ff"}
+          emissive={isSelected ? "#ff3300" : "#000000"}
           emissiveIntensity={0.3}
         />
       </mesh>
+      
+      {isSelected && meshReady && meshRef.current && (
+        <TransformControls
+          ref={transformRef}
+          object={meshRef.current}
+          mode="translate"
+          size={0.75}
+          showX={true}
+          showY={true}
+          showZ={true}
+        />
+      )}
     </group>
   );
 }
