@@ -14,6 +14,8 @@ export function GameUI() {
     removeTrackPoint,
     rideSpeed,
     setRideSpeed,
+    isAddingPoints,
+    setIsAddingPoints,
   } = useRollerCoaster();
   
   const canRide = trackPoints.length >= 2;
@@ -26,13 +28,24 @@ export function GameUI() {
         {mode === "build" && (
           <>
             <p className="text-sm text-gray-300 mb-3">
-              Click on the ground to place track points. Drag up/down before releasing to set height.
+              {isAddingPoints 
+                ? "Click on the ground to place track points. Drag up/down before releasing to set height."
+                : "View/Edit mode: Pan around and adjust existing points. Click points to select and move them."}
             </p>
             <p className="text-sm text-gray-400 mb-2">
               Points: {trackPoints.length}
             </p>
             
             <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => setIsAddingPoints(!isAddingPoints)}
+                className={isAddingPoints 
+                  ? "bg-blue-600 hover:bg-blue-700" 
+                  : "bg-gray-600 hover:bg-gray-700"}
+              >
+                {isAddingPoints ? "Adding Points (ON)" : "Adding Points (OFF)"}
+              </Button>
+              
               <Button
                 onClick={startRide}
                 disabled={!canRide}
@@ -110,12 +123,19 @@ export function GameUI() {
         <h3 className="font-semibold mb-1">Controls:</h3>
         {mode === "build" ? (
           <ul className="text-gray-300 text-xs space-y-1">
-            <li>• Click ground to place points</li>
-            <li>• Drag while clicking to set height</li>
+            {isAddingPoints ? (
+              <>
+                <li>• Click ground to place points</li>
+                <li>• Drag while clicking to set height</li>
+              </>
+            ) : (
+              <>
+                <li>• Click + drag to orbit camera</li>
+                <li>• Scroll to zoom</li>
+              </>
+            )}
             <li>• Click points to select</li>
-            <li>• Drag points to move them</li>
-            <li>• Use mouse to orbit camera</li>
-            <li>• Scroll to zoom</li>
+            <li>• Use arrows to move selected point</li>
           </ul>
         ) : (
           <p className="text-gray-300 text-xs">Sit back and enjoy!</p>

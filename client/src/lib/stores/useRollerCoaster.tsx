@@ -16,6 +16,7 @@ interface RollerCoasterState {
   isRiding: boolean;
   rideSpeed: number;
   isDraggingPoint: boolean;
+  isAddingPoints: boolean;
   
   setMode: (mode: CoasterMode) => void;
   addTrackPoint: (position: THREE.Vector3) => void;
@@ -27,6 +28,7 @@ interface RollerCoasterState {
   setIsRiding: (riding: boolean) => void;
   setRideSpeed: (speed: number) => void;
   setIsDraggingPoint: (dragging: boolean) => void;
+  setIsAddingPoints: (adding: boolean) => void;
   startRide: () => void;
   stopRide: () => void;
 }
@@ -41,10 +43,13 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
   isRiding: false,
   rideSpeed: 1.0,
   isDraggingPoint: false,
+  isAddingPoints: true,
   
   setMode: (mode) => set({ mode }),
   
   setIsDraggingPoint: (dragging) => set({ isDraggingPoint: dragging }),
+  
+  setIsAddingPoints: (adding) => set({ isAddingPoints: adding }),
   
   addTrackPoint: (position) => {
     const id = `point-${++pointCounter}`;

@@ -6,7 +6,7 @@ import { TrackPoint } from "./TrackPoint";
 import { Track } from "./Track";
 
 export function TrackBuilder() {
-  const { trackPoints, addTrackPoint, mode, selectPoint } = useRollerCoaster();
+  const { trackPoints, addTrackPoint, mode, selectPoint, isAddingPoints } = useRollerCoaster();
   const planeRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   
@@ -49,7 +49,7 @@ export function TrackBuilder() {
   }, [isDraggingNew, dragPosition, addTrackPoint, gl.domElement]);
   
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (mode !== "build") return;
+    if (mode !== "build" || !isAddingPoints) return;
     e.stopPropagation();
     
     selectPoint(null);
