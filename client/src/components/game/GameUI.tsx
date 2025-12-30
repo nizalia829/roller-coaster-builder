@@ -20,6 +20,8 @@ export function GameUI() {
     setIsLooped,
     hasChainLift,
     setHasChainLift,
+    showWoodSupports,
+    setShowWoodSupports,
   } = useRollerCoaster();
   
   const [position, setPosition] = useState({ x: 8, y: 8 });
@@ -99,6 +101,17 @@ export function GameUI() {
                   : "bg-gray-600 hover:bg-gray-700"}`}
               >
                 {hasChainLift ? "Chain ON" : "Chain OFF"}
+              </Button>
+              
+              <Button
+                size="sm"
+                onClick={() => setShowWoodSupports(!showWoodSupports)}
+                disabled={trackPoints.length < 2}
+                className={`h-6 text-[10px] px-2 ${showWoodSupports 
+                  ? "bg-amber-700 hover:bg-amber-800" 
+                  : "bg-gray-600 hover:bg-gray-700"}`}
+              >
+                {showWoodSupports ? "Wood ON" : "Wood OFF"}
               </Button>
               
               <Button
