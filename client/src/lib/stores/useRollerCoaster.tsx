@@ -130,33 +130,34 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
       }
       
       const loopRadius = 8;
-      const numPoints = 20; // More points for smoother curve
-      const leadOut = 6; // Lead-out distance for smooth exit transition
-      const totalLoopLength = loopRadius + leadOut; // Total forward shift needed for downstream points
+      const numPoints = 24; // More points for smoother curve
+      const totalShift = loopRadius * 2 + 4; // Total forward shift: loop diameter + buffer
       const loopPoints: TrackPoint[] = [];
       
       // Loop path using θ from 0 to 2π:
-      // forwardOffset = sin(θ) * radius → goes away from entry (far side) then back
-      // verticalOffset = (1 - cos(θ)) * radius → 0 at start, 2*radius at top, 0 at end
-      // 
-      // Path: entry → forward to far side while rising → over top → back toward entry while descending → exit ahead
+      // The loop circle oscillates forward/back with sin(θ), but we add a smooth
+      // progressive shift so the exit aligns with the shifted downstream track.
+      // Using smoothstep for gradual acceleration/deceleration: S(t) = t²(3-2t)
       
       for (let i = 1; i <= numPoints; i++) {
         const t = i / numPoints;
         const theta = t * Math.PI * 2;
         
-        // sin(θ): 0→1→0→-1→0 (forward away, then back behind, then return)
+        // Smoothstep function for gradual shift distribution
+        const smoothT = t * t * (3 - 2 * t);
+        
+        // sin(θ): oscillates forward (+) then back (-) then returns to 0
         const forwardOffset = Math.sin(theta) * loopRadius;
-        // (1-cos(θ)): 0→1→2→1→0 scaled by radius (height curve)
+        // (1-cos(θ)): height curve 0→2R→0
         const verticalOffset = (1 - Math.cos(theta)) * loopRadius;
         
-        // Add gradual forward motion to prevent backtracking at end
-        // This spreads the loop forward so exit is ahead of entry
-        const progressiveForward = t * leadOut;
+        // Progressive shift distributed smoothly across the loop
+        // By the end (t=1, smoothT=1), we've shifted by totalShift
+        const progressiveShift = smoothT * totalShift;
         
-        const x = entryPos.x + forward.x * (forwardOffset + progressiveForward);
+        const x = entryPos.x + forward.x * (forwardOffset + progressiveShift);
         const y = entryPos.y + verticalOffset;
-        const z = entryPos.z + forward.z * (forwardOffset + progressiveForward);
+        const z = entryPos.z + forward.z * (forwardOffset + progressiveShift);
         
         loopPoints.push({
           id: `point-${++pointCounter}`,
@@ -165,13 +166,13 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
         });
       }
       
-      // Shift all downstream points forward to make room for the loop
+      // Shift all downstream points forward by the same amount
       const shiftedDownstreamPoints = state.trackPoints.slice(pointIndex + 1).map(p => ({
         ...p,
         position: new THREE.Vector3(
-          p.position.x + forward.x * totalLoopLength,
+          p.position.x + forward.x * totalShift,
           p.position.y,
-          p.position.z + forward.z * totalLoopLength
+          p.position.z + forward.z * totalShift
         )
       }));
       
