@@ -257,41 +257,59 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
         .add(forward.clone().multiplyScalar(forwardSeparation))
         .add(right.clone().multiplyScalar(exitSeparation));
       
-      // === EXIT TRANSITION: Gentle exit from the loop ===
-      // Keep it simple - just one smooth transition point to the next legacy point
+      // === EXIT TRANSITION: Simple exit from the loop ===
+      // The loop's last point is offset laterally. Use offsetLoopExit as anchor, then blend to legacy track.
       const transitionPoints: TrackPoint[] = [];
       
-      const nextNextPoint = state.trackPoints[pointIndex + 2];
-      const targetPoint = nextNextPoint || nextPoint;
+      // First transition point: the offset exit anchor (clears the entry track)
+      transitionPoints.push({
+        id: `point-${++pointCounter}`,
+        position: offsetLoopExit.clone(),
+        tilt: 0
+      });
       
-      // Loop exit tangent: at θ=2π, tangent = forward
-      const exitTangent = forward.clone();
+      // Target: the next legacy point after the one we're replacing
+      const targetPoint = nextPoint;
       
       if (targetPoint) {
         const targetPos = targetPoint.position.clone();
         
-        // Direction toward the target
-        const toTarget = targetPos.clone().sub(loopExit).normalize();
-        toTarget.y = 0;
-        toTarget.normalize();
+        // Legacy direction: where the track was heading
+        const nextNextPoint = state.trackPoints[pointIndex + 2];
+        let legacyDir: THREE.Vector3;
+        if (nextNextPoint) {
+          legacyDir = nextNextPoint.position.clone().sub(targetPos).normalize();
+        } else {
+          legacyDir = targetPos.clone().sub(offsetLoopExit).normalize();
+        }
         
-        // Simple linear blend: just add one midpoint that's slightly offset in the forward direction
-        // to prevent sharp angle at loop exit
-        const midpoint = loopExit.clone().lerp(targetPos, 0.5);
+        // Single Hermite blend from offsetLoopExit to targetPos
+        const dist = offsetLoopExit.distanceTo(targetPos);
+        const scale = dist * 0.4;
         
-        // Gently push the midpoint forward to create a smooth curve
-        const pushAmount = loopExit.distanceTo(targetPos) * 0.15;
-        midpoint.add(forward.clone().multiplyScalar(pushAmount));
+        const t = 0.5;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const h00 = 2*t3 - 3*t2 + 1;
+        const h10 = t3 - 2*t2 + t;
+        const h01 = -2*t3 + 3*t2;
+        const h11 = t3 - t2;
+        
+        const blendPoint = new THREE.Vector3()
+          .addScaledVector(offsetLoopExit, h00)
+          .addScaledVector(forward, h10 * scale)
+          .addScaledVector(targetPos, h01)
+          .addScaledVector(legacyDir, h11 * scale);
         
         transitionPoints.push({
           id: `point-${++pointCounter}`,
-          position: midpoint,
+          position: blendPoint,
           tilt: 0
         });
       }
       
-      // Combine: original up to BEFORE entry + approach + entry + loop + transitions + skip one legacy point + rest
-      const skipCount = nextNextPoint ? 2 : 1;
+      // Combine: skip only the immediate next legacy point (the one at loop entry)
+      const skipCount = 1;
       const newTrackPoints = [
         ...state.trackPoints.slice(0, pointIndex), // All points before entry
         ...approachPoints,                          // Smooth approach to entry
