@@ -14,6 +14,8 @@ export function RideCamera() {
   const previousRoll = useRef(0);
   const previousUp = useRef(new THREE.Vector3(0, 1, 0));
   const maxHeightReached = useRef(0);
+  const previousFov = useRef(75);
+  const previousPitchOffset = useRef(0);
   
   const firstPeakT = useMemo(() => {
     if (trackPoints.length < 2) return 0;
@@ -132,15 +134,33 @@ export function RideCamera() {
     // Recompute up to ensure orthogonality
     const finalUp = new THREE.Vector3().crossVectors(rightVector, tangent).normalize();
     
+    // Calculate slope intensity for thrill effects (0 = flat, 1 = straight down)
+    const slopeIntensity = Math.max(0, -tangent.y);
+    
+    // On steep drops, pitch camera down slightly to see track ahead
+    // Max pitch offset of ~15 degrees when going straight down
+    const targetPitchOffset = slopeIntensity * 0.25;
+    previousPitchOffset.current = previousPitchOffset.current + (targetPitchOffset - previousPitchOffset.current) * CAMERA_LERP;
+    
+    // Apply pitch by rotating the look direction down (around right vector)
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(rightVector, previousPitchOffset.current);
+    const pitchedTangent = tangent.clone().applyQuaternion(pitchQuat);
+    const pitchedUp = finalUp.clone().applyQuaternion(pitchQuat);
+    
     // Camera position: on track + height along final up
     const cameraOffset = finalUp.clone().multiplyScalar(CAMERA_HEIGHT);
     const targetCameraPos = position.clone().add(cameraOffset);
     
-    // Build rotation matrix from basis vectors (tangent=forward, finalUp=up, rightVector=right)
-    // Camera looks along -Z in its local space, so forward = tangent means -Z = tangent
+    // Build rotation matrix from basis vectors with pitched look direction
     const rotationMatrix = new THREE.Matrix4();
-    rotationMatrix.makeBasis(rightVector, finalUp, tangent.clone().negate());
+    rotationMatrix.makeBasis(rightVector, pitchedUp, pitchedTangent.clone().negate());
     const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotationMatrix);
+    
+    // Dynamic FOV: increase on steep drops for enhanced thrill (75 base, up to 90 on drops)
+    const targetFov = 75 + slopeIntensity * 15;
+    previousFov.current = previousFov.current + (targetFov - previousFov.current) * CAMERA_LERP;
+    (camera as THREE.PerspectiveCamera).fov = previousFov.current;
+    (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
     
     // Smooth position and orientation
     previousCameraPos.current.lerp(targetCameraPos, CAMERA_LERP);
