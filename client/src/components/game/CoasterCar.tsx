@@ -9,16 +9,24 @@ interface TrackSection {
   startProgress: number;
   endProgress: number;
   arcLength: number;
-  loopSegment?: LoopSegment;
+  loopFrame?: LoopFrame;
   splineStartT?: number;
   splineEndT?: number;
 }
 
+interface LoopFrame {
+  entryPos: THREE.Vector3;
+  forward: THREE.Vector3;
+  up: THREE.Vector3;
+  right: THREE.Vector3;
+  radius: number;
+}
+
 function sampleLoopAnalytically(
-  segment: LoopSegment,
+  frame: LoopFrame,
   theta: number
 ): { point: THREE.Vector3; tangent: THREE.Vector3; up: THREE.Vector3 } {
-  const { entryPos, forward, up, radius } = segment;
+  const { entryPos, forward, up, radius } = frame;
   
   const point = new THREE.Vector3(
     entryPos.x + forward.x * Math.sin(theta) * radius + up.x * (1 - Math.cos(theta)) * radius,
@@ -37,6 +45,49 @@ function sampleLoopAnalytically(
     .normalize();
   
   return { point, tangent, up: inwardUp };
+}
+
+function computeLoopFrame(
+  spline: THREE.CatmullRomCurve3,
+  splineT: number,
+  prevTangent: THREE.Vector3,
+  prevUp: THREE.Vector3,
+  radius: number
+): LoopFrame {
+  const entryPos = spline.getPoint(splineT);
+  const forward = spline.getTangent(splineT).normalize();
+  
+  const dot = Math.max(-1, Math.min(1, prevTangent.dot(forward)));
+  let entryUp: THREE.Vector3;
+  if (dot > 0.9999) {
+    entryUp = prevUp.clone();
+  } else if (dot < -0.9999) {
+    entryUp = prevUp.clone();
+  } else {
+    const axis = new THREE.Vector3().crossVectors(prevTangent, forward);
+    if (axis.length() > 0.0001) {
+      axis.normalize();
+      const angle = Math.acos(dot);
+      const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+      entryUp = prevUp.clone().applyQuaternion(quat);
+    } else {
+      entryUp = prevUp.clone();
+    }
+  }
+  
+  const upDot = entryUp.dot(forward);
+  entryUp.sub(forward.clone().multiplyScalar(upDot));
+  if (entryUp.length() > 0.001) {
+    entryUp.normalize();
+  } else {
+    entryUp.set(0, 1, 0);
+    const d = entryUp.dot(forward);
+    entryUp.sub(forward.clone().multiplyScalar(d)).normalize();
+  }
+  
+  const right = new THREE.Vector3().crossVectors(forward, entryUp).normalize();
+  
+  return { entryPos, forward, up: entryUp, right, radius };
 }
 
 function sampleHybridTrack(
@@ -62,9 +113,9 @@ function sampleHybridTrack(
   
   const localT = (progress - section.startProgress) / (section.endProgress - section.startProgress);
   
-  if (section.type === "loop" && section.loopSegment) {
+  if (section.type === "loop" && section.loopFrame) {
     const theta = localT * Math.PI * 2;
-    return sampleLoopAnalytically(section.loopSegment, theta);
+    return sampleLoopAnalytically(section.loopFrame, theta);
   } else if (section.splineStartT !== undefined && section.splineEndT !== undefined) {
     const splineT = section.splineStartT + localT * (section.splineEndT - section.splineStartT);
     const point = spline.getPoint(splineT);
@@ -97,12 +148,9 @@ export function CoasterCar() {
     const curve = getTrackCurve(trackPoints, isLooped);
     if (!curve) return [];
     
-    const loopMap = new Map<string, { segment: LoopSegment; pointIndex: number }>();
+    const loopMap = new Map<string, LoopSegment>();
     for (const seg of loopSegments) {
-      const idx = trackPoints.findIndex(p => p.id === seg.entryPointId);
-      if (idx !== -1) {
-        loopMap.set(seg.entryPointId, { segment: seg, pointIndex: idx });
-      }
+      loopMap.set(seg.entryPointId, seg);
     }
     
     const numPoints = trackPoints.length;
@@ -110,46 +158,80 @@ export function CoasterCar() {
     const sections: TrackSection[] = [];
     let accumulatedLength = 0;
     
+    let prevTangent = curve.getTangent(0).normalize();
+    let prevUp = new THREE.Vector3(0, 1, 0);
+    const initDot = prevUp.dot(prevTangent);
+    prevUp.sub(prevTangent.clone().multiplyScalar(initDot));
+    if (prevUp.length() < 0.01) {
+      prevUp.set(1, 0, 0);
+      const d = prevUp.dot(prevTangent);
+      prevUp.sub(prevTangent.clone().multiplyScalar(d));
+    }
+    prevUp.normalize();
+    
     for (let i = 0; i < numPoints; i++) {
       const point = trackPoints[i];
-      const loopInfo = loopMap.get(point.id);
+      const loopSeg = loopMap.get(point.id);
       
-      if (loopInfo) {
-        const loopArcLength = 2 * Math.PI * loopInfo.segment.radius;
+      if (loopSeg) {
+        const splineT = i / totalSplineSegments;
+        const loopFrame = computeLoopFrame(curve, splineT, prevTangent, prevUp, loopSeg.radius);
+        const loopArcLength = 2 * Math.PI * loopSeg.radius;
+        
         sections.push({
           type: "loop",
           startProgress: 0,
           endProgress: 0,
           arcLength: loopArcLength,
-          loopSegment: loopInfo.segment,
+          loopFrame,
         });
         accumulatedLength += loopArcLength;
-      } else {
-        if (i >= numPoints - 1 && !isLooped) continue;
         
-        const splineStartT = i / totalSplineSegments;
-        const splineEndT = (i + 1) / totalSplineSegments;
-        
-        let segmentLength = 0;
-        const subSamples = 10;
-        for (let s = 0; s < subSamples; s++) {
-          const t1 = splineStartT + (s / subSamples) * (splineEndT - splineStartT);
-          const t2 = splineStartT + ((s + 1) / subSamples) * (splineEndT - splineStartT);
-          const p1 = curve.getPoint(t1);
-          const p2 = curve.getPoint(t2);
-          segmentLength += p1.distanceTo(p2);
-        }
-        
-        sections.push({
-          type: "spline",
-          startProgress: 0,
-          endProgress: 0,
-          arcLength: segmentLength,
-          splineStartT,
-          splineEndT,
-        });
-        accumulatedLength += segmentLength;
+        const exitSample = sampleLoopAnalytically(loopFrame, Math.PI * 2);
+        prevTangent.copy(exitSample.tangent);
+        prevUp.copy(exitSample.up);
       }
+      
+      if (i >= numPoints - 1 && !isLooped) continue;
+      
+      const splineStartT = i / totalSplineSegments;
+      const splineEndT = (i + 1) / totalSplineSegments;
+      
+      let segmentLength = 0;
+      const subSamples = 10;
+      for (let s = 0; s < subSamples; s++) {
+        const t1 = splineStartT + (s / subSamples) * (splineEndT - splineStartT);
+        const t2 = splineStartT + ((s + 1) / subSamples) * (splineEndT - splineStartT);
+        const p1 = curve.getPoint(t1);
+        const p2 = curve.getPoint(t2);
+        segmentLength += p1.distanceTo(p2);
+      }
+      
+      sections.push({
+        type: "spline",
+        startProgress: 0,
+        endProgress: 0,
+        arcLength: segmentLength,
+        splineStartT,
+        splineEndT,
+      });
+      accumulatedLength += segmentLength;
+      
+      const endTangent = curve.getTangent(splineEndT).normalize();
+      const dot = Math.max(-1, Math.min(1, prevTangent.dot(endTangent)));
+      if (dot < 0.9999 && dot > -0.9999) {
+        const axis = new THREE.Vector3().crossVectors(prevTangent, endTangent);
+        if (axis.length() > 0.0001) {
+          axis.normalize();
+          const angle = Math.acos(dot);
+          const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+          prevUp.applyQuaternion(quat);
+        }
+      }
+      const upDot = prevUp.dot(endTangent);
+      prevUp.sub(endTangent.clone().multiplyScalar(upDot));
+      if (prevUp.length() > 0.001) prevUp.normalize();
+      prevTangent.copy(endTangent);
     }
     
     let runningLength = 0;

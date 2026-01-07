@@ -4,13 +4,10 @@ import * as THREE from "three";
 export type CoasterMode = "build" | "ride" | "preview";
 
 // Loop segment descriptor - stored separately from track points
+// The actual loop frame (forward, up, right) is computed at runtime from the spline
 export interface LoopSegment {
   id: string;
   entryPointId: string;  // ID of track point where loop starts
-  entryPos: THREE.Vector3;
-  forward: THREE.Vector3;  // Direction entering the loop
-  up: THREE.Vector3;
-  right: THREE.Vector3;
   radius: number;
 }
 
@@ -25,10 +22,6 @@ export interface TrackPoint {
 interface SerializedLoopSegment {
   id: string;
   entryPointId: string;
-  entryPos: [number, number, number];
-  forward: [number, number, number];
-  up: [number, number, number];
-  right: [number, number, number];
   radius: number;
 }
 
@@ -81,10 +74,6 @@ function serializeLoopSegment(segment: LoopSegment): SerializedLoopSegment {
   return {
     id: segment.id,
     entryPointId: segment.entryPointId,
-    entryPos: serializeVector3(segment.entryPos),
-    forward: serializeVector3(segment.forward),
-    up: serializeVector3(segment.up),
-    right: serializeVector3(segment.right),
     radius: segment.radius,
   };
 }
@@ -93,10 +82,6 @@ function deserializeLoopSegment(serialized: SerializedLoopSegment): LoopSegment 
   return {
     id: serialized.id,
     entryPointId: serialized.entryPointId,
-    entryPos: deserializeVector3(serialized.entryPos),
-    forward: deserializeVector3(serialized.forward),
-    up: deserializeVector3(serialized.up),
-    right: deserializeVector3(serialized.right),
     radius: serialized.radius,
   };
 }
@@ -235,40 +220,17 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
       const pointIndex = state.trackPoints.findIndex((p) => p.id === id);
       if (pointIndex === -1) return state;
       
-      // Check if this point already has a loop
       const entryPoint = state.trackPoints[pointIndex];
       if (entryPoint.hasLoop) return state;
       
-      const entryPos = entryPoint.position.clone();
-      
-      // Calculate forward direction from neighboring points
-      let forward = new THREE.Vector3(1, 0, 0);
-      if (pointIndex > 0) {
-        const prevPoint = state.trackPoints[pointIndex - 1];
-        forward = entryPos.clone().sub(prevPoint.position);
-        forward.y = 0;  // Keep loop vertical
-        if (forward.length() < 0.1) {
-          forward = new THREE.Vector3(1, 0, 0);
-        }
-        forward.normalize();
-      }
-      
       const loopRadius = 5;
-      const up = new THREE.Vector3(0, 1, 0);
-      const right = new THREE.Vector3().crossVectors(forward, up).normalize();
       
-      // Create loop segment descriptor (NO points inserted into track)
       const loopSegment: LoopSegment = {
         id: `loop-${Date.now()}`,
         entryPointId: id,
-        entryPos: entryPos.clone(),
-        forward: forward.clone(),
-        up: up.clone(),
-        right: right.clone(),
         radius: loopRadius,
       };
       
-      // Mark the track point as having a loop
       const newTrackPoints = state.trackPoints.map((p) =>
         p.id === id ? { ...p, hasLoop: true } : p
       );

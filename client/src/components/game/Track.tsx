@@ -29,11 +29,19 @@ interface RailSample {
   tilt: number;
 }
 
+interface LoopFrame {
+  entryPos: THREE.Vector3;
+  forward: THREE.Vector3;
+  up: THREE.Vector3;
+  right: THREE.Vector3;
+  radius: number;
+}
+
 function sampleLoopAnalytically(
-  segment: LoopSegment,
+  frame: LoopFrame,
   theta: number
 ): { point: THREE.Vector3; tangent: THREE.Vector3; up: THREE.Vector3; normal: THREE.Vector3 } {
-  const { entryPos, forward, up, right, radius } = segment;
+  const { entryPos, forward, up, right, radius } = frame;
   
   const point = new THREE.Vector3(
     entryPos.x + forward.x * Math.sin(theta) * radius + up.x * (1 - Math.cos(theta)) * radius,
@@ -51,7 +59,9 @@ function sampleLoopAnalytically(
     .addScaledVector(up, Math.cos(theta))
     .normalize();
   
-  return { point, tangent, up: inwardUp, normal: right.clone() };
+  const normal = new THREE.Vector3().crossVectors(tangent, inwardUp).normalize();
+  
+  return { point, tangent, up: inwardUp, normal };
 }
 
 export function Track() {
@@ -71,9 +81,9 @@ export function Track() {
     }
     
     const railData: RailSample[] = [];
-    const numSamplesPerPoint = 20;
+    const numSamplesPerSegment = 20;
     const numTrackPoints = trackPoints.length;
-    const totalSplineLength = isLooped ? numTrackPoints : numTrackPoints - 1;
+    const totalSplineSegments = isLooped ? numTrackPoints : numTrackPoints - 1;
     
     let prevTangent = baseSpline.getTangent(0).normalize();
     let prevUp = new THREE.Vector3(0, 1, 0);
@@ -91,10 +101,54 @@ export function Track() {
       const loopSeg = loopMap.get(currentPoint.id);
       
       if (loopSeg) {
+        const splineT = pointIdx / totalSplineSegments;
+        const entryPos = baseSpline.getPoint(splineT);
+        const splineTangent = baseSpline.getTangent(splineT).normalize();
+        
+        const forward = splineTangent.clone();
+        
+        const dot = Math.max(-1, Math.min(1, prevTangent.dot(forward)));
+        let entryUp: THREE.Vector3;
+        if (dot > 0.9999) {
+          entryUp = prevUp.clone();
+        } else if (dot < -0.9999) {
+          entryUp = prevUp.clone();
+        } else {
+          const axis = new THREE.Vector3().crossVectors(prevTangent, forward);
+          if (axis.length() > 0.0001) {
+            axis.normalize();
+            const angle = Math.acos(dot);
+            const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+            entryUp = prevUp.clone().applyQuaternion(quat);
+          } else {
+            entryUp = prevUp.clone();
+          }
+        }
+        
+        const upDot = entryUp.dot(forward);
+        entryUp.sub(forward.clone().multiplyScalar(upDot));
+        if (entryUp.length() > 0.001) {
+          entryUp.normalize();
+        } else {
+          entryUp.set(0, 1, 0);
+          const d = entryUp.dot(forward);
+          entryUp.sub(forward.clone().multiplyScalar(d)).normalize();
+        }
+        
+        const right = new THREE.Vector3().crossVectors(forward, entryUp).normalize();
+        
+        const loopFrame: LoopFrame = {
+          entryPos,
+          forward,
+          up: entryUp,
+          right,
+          radius: loopSeg.radius
+        };
+        
         const loopSamples = 32;
         for (let i = 0; i <= loopSamples; i++) {
           const theta = (i / loopSamples) * Math.PI * 2;
-          const sample = sampleLoopAnalytically(loopSeg, theta);
+          const sample = sampleLoopAnalytically(loopFrame, theta);
           railData.push({
             point: sample.point,
             tangent: sample.tangent,
@@ -102,56 +156,56 @@ export function Track() {
             up: sample.up,
             tilt: 0
           });
-          prevTangent.copy(sample.tangent);
-          prevUp.copy(sample.up);
         }
-      } else {
-        const nextIdx = isLooped ? (pointIdx + 1) % numTrackPoints : Math.min(pointIdx + 1, numTrackPoints - 1);
-        if (pointIdx >= numTrackPoints - 1 && !isLooped) continue;
         
-        const samplesInSegment = numSamplesPerPoint;
-        for (let s = 0; s < samplesInSegment; s++) {
-          const localT = s / samplesInSegment;
-          const globalT = (pointIdx + localT) / totalSplineLength;
-          
-          const point = baseSpline.getPoint(globalT);
-          const tangent = baseSpline.getTangent(globalT).normalize();
-          const tilt = interpolateTilt(trackPoints, globalT, isLooped);
-          
-          let up: THREE.Vector3;
-          
-          const dot = Math.max(-1, Math.min(1, prevTangent.dot(tangent)));
-          if (dot > 0.9999) {
-            up = prevUp.clone();
-          } else if (dot < -0.9999) {
-            up = prevUp.clone();
-          } else {
-            const axis = new THREE.Vector3().crossVectors(prevTangent, tangent);
-            if (axis.length() > 0.0001) {
-              axis.normalize();
-              const angle = Math.acos(dot);
-              const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-              up = prevUp.clone().applyQuaternion(quat);
-            } else {
-              up = prevUp.clone();
-            }
-          }
-          
-          const upDot = up.dot(tangent);
-          up.sub(tangent.clone().multiplyScalar(upDot));
-          if (up.length() > 0.001) {
-            up.normalize();
+        const exitSample = sampleLoopAnalytically(loopFrame, Math.PI * 2);
+        prevTangent.copy(exitSample.tangent);
+        prevUp.copy(exitSample.up);
+      }
+      
+      if (pointIdx >= numTrackPoints - 1 && !isLooped) continue;
+      
+      for (let s = 0; s < numSamplesPerSegment; s++) {
+        const localT = s / numSamplesPerSegment;
+        const globalT = (pointIdx + localT) / totalSplineSegments;
+        
+        const point = baseSpline.getPoint(globalT);
+        const tangent = baseSpline.getTangent(globalT).normalize();
+        const tilt = interpolateTilt(trackPoints, globalT, isLooped);
+        
+        let up: THREE.Vector3;
+        
+        const dot = Math.max(-1, Math.min(1, prevTangent.dot(tangent)));
+        if (dot > 0.9999) {
+          up = prevUp.clone();
+        } else if (dot < -0.9999) {
+          up = prevUp.clone();
+        } else {
+          const axis = new THREE.Vector3().crossVectors(prevTangent, tangent);
+          if (axis.length() > 0.0001) {
+            axis.normalize();
+            const angle = Math.acos(dot);
+            const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+            up = prevUp.clone().applyQuaternion(quat);
           } else {
             up = prevUp.clone();
           }
-          
-          prevTangent.copy(tangent);
-          prevUp.copy(up);
-          
-          const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
-          
-          railData.push({ point, tangent, normal, up, tilt });
         }
+        
+        const upDot = up.dot(tangent);
+        up.sub(tangent.clone().multiplyScalar(upDot));
+        if (up.length() > 0.001) {
+          up.normalize();
+        } else {
+          up = prevUp.clone();
+        }
+        
+        prevTangent.copy(tangent);
+        prevUp.copy(up);
+        
+        const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
+        
+        railData.push({ point, tangent, normal, up, tilt });
       }
     }
     
