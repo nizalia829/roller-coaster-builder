@@ -5,7 +5,6 @@ import { Ground } from "./components/game/Ground";
 import { TrackBuilder } from "./components/game/TrackBuilder";
 import { BuildCamera } from "./components/game/BuildCamera";
 import { RideCamera } from "./components/game/RideCamera";
-import { CoasterCar } from "./components/game/CoasterCar";
 import { Sky } from "./components/game/Sky";
 import { GameUI } from "./components/game/GameUI";
 import { useRollerCoaster } from "./lib/stores/useRollerCoaster";
@@ -76,7 +75,6 @@ function Scene() {
       <Suspense fallback={null}>
         <Ground />
         <TrackBuilder />
-        <CoasterCar />
       </Suspense>
     </>
   );
