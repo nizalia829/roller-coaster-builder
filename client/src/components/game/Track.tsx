@@ -228,31 +228,32 @@ export function Track() {
         const tangent = baseSpline.getTangent(globalT).normalize();
         const tilt = interpolateTilt(trackPoints, globalT, isLooped);
         
+        // Use world-up anchored frame to keep track level at hill peaks
+        // This prevents unwanted twist/roll when going over hills
+        const worldUp = new THREE.Vector3(0, 1, 0);
         let up: THREE.Vector3;
         
-        const dot = Math.max(-1, Math.min(1, prevTangent.dot(tangent)));
-        if (dot > 0.9999) {
-          up = prevUp.clone();
-        } else if (dot < -0.9999) {
-          up = prevUp.clone();
-        } else {
-          const axis = new THREE.Vector3().crossVectors(prevTangent, tangent);
-          if (axis.length() > 0.0001) {
-            axis.normalize();
-            const angle = Math.acos(dot);
-            const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-            up = prevUp.clone().applyQuaternion(quat);
-          } else {
-            up = prevUp.clone();
-          }
-        }
+        // Compute right vector from tangent and world up
+        const right = new THREE.Vector3().crossVectors(tangent, worldUp);
         
-        const upDot = up.dot(tangent);
-        up.sub(tangent.clone().multiplyScalar(upDot));
-        if (up.length() > 0.001) {
-          up.normalize();
+        if (right.length() > 0.01) {
+          // Normal case: tangent is not vertical
+          right.normalize();
+          up = new THREE.Vector3().crossVectors(right, tangent).normalize();
         } else {
+          // Tangent is nearly vertical (going straight up or down)
+          // Fall back to previous up vector to maintain continuity
           up = prevUp.clone();
+          const upDot = up.dot(tangent);
+          up.sub(tangent.clone().multiplyScalar(upDot));
+          if (up.length() > 0.001) {
+            up.normalize();
+          } else {
+            // Extreme case: use a fallback
+            up.set(1, 0, 0);
+            const d = up.dot(tangent);
+            up.sub(tangent.clone().multiplyScalar(d)).normalize();
+          }
         }
         
         prevTangent.copy(tangent);

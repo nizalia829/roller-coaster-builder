@@ -417,15 +417,29 @@ function sampleHybridTrack(
     
     point.add(rollOffset);
     
-    let up = new THREE.Vector3(0, 1, 0);
-    const dot = up.dot(tangent);
-    up.sub(tangent.clone().multiplyScalar(dot));
-    if (up.lengthSq() > 0.001) {
-      up.normalize();
+    // Use world-up anchored frame to keep track level at hill peaks
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    let up: THREE.Vector3;
+    
+    // Compute right vector from tangent and world up
+    const right = new THREE.Vector3().crossVectors(tangent, worldUp);
+    
+    if (right.length() > 0.01) {
+      // Normal case: tangent is not vertical
+      right.normalize();
+      up = new THREE.Vector3().crossVectors(right, tangent).normalize();
     } else {
-      up.set(1, 0, 0);
-      const d = up.dot(tangent);
-      up.sub(tangent.clone().multiplyScalar(d)).normalize();
+      // Tangent is nearly vertical - use fallback
+      up = new THREE.Vector3(0, 1, 0);
+      const upDot = up.dot(tangent);
+      up.sub(tangent.clone().multiplyScalar(upDot));
+      if (up.length() > 0.001) {
+        up.normalize();
+      } else {
+        up.set(1, 0, 0);
+        const d = up.dot(tangent);
+        up.sub(tangent.clone().multiplyScalar(d)).normalize();
+      }
     }
     
     return { point, tangent, up, inRoll: false };
