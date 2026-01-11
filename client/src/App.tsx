@@ -20,18 +20,15 @@ function MusicController() {
   
   useEffect(() => {
     const getBasePath = () => {
-      const path = window.location.pathname;
-      const origin = window.location.origin;
-      if (path.startsWith('/roller-coaster-builder')) {
-        return `${origin}/roller-coaster-builder/`;
+      const hostname = window.location.hostname;
+      if (hostname === 'jimenez537.github.io') {
+        return '/roller-coaster-builder/';
       }
-      return `${origin}/`;
+      return '/';
     };
     const base = getBasePath();
-    console.log('Audio base path:', base);
     
     const dayMusic = new Audio(`${base}sounds/music.mp3`);
-    console.log('Day music URL:', dayMusic.src);
     dayMusic.loop = true;
     dayMusic.volume = 0.5;
     setDaylightMusic(dayMusic);
